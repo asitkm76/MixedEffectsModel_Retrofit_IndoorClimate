@@ -13,11 +13,17 @@ The primary contribution is the analytical framework and its open-source impleme
 ---
 
 ## Repository Structure
+
 **The repository houses the following files:**
+
 A License file.
+
 A gitignore file for R repositories.
+
 A read me file (this one).
+
 The analysis code: mixed_effects_model_analysis.R
+
 And sample data provided in two forms: a csv file and an R data file.
 
 

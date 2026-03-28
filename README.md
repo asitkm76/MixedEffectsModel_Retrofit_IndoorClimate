@@ -13,18 +13,12 @@ The primary contribution is the analytical framework and its open-source impleme
 ---
 
 ## Repository Structure
-├── data/
-│ └── sample_data.csv # Stratified sample (~28,000 obs, ~5% of full dataset)
-├── code/
-│ ├── 01_data_preparation.R # Data cleaning, variable derivation, tidy structure
-│ ├── 02_model_building.R # Fixed/random effect selection, LRT comparisons
-│ ├── 03_diagnostics.R # Residuals, VIF, autocorrelation, Q-Q plots
-│ ├── 04_results.R # Coefficient tables, standardised effects, emmeans
-│ ├── 05_visualisation.R # All figures included in the paper
-│ └── 06_robustness.R # Sensitivity analysis and external validation
-├── analysis_data_pre_post_MEM.qmd # Full Quarto document (reproducible paper)
-├── README.md
-└── LICENSE
+**The repository houses the following files:**
+A License file.
+A gitignore file for R repositories.
+A read me file (this one).
+The analysis code: mixed_effects_model_analysis.R
+And sample data provided in two forms: a csv file and an R data file.
 
 
 ---

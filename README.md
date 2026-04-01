@@ -6,7 +6,7 @@
 
 This repository provides a complete, transferable methodological framework for evaluating the impact of energy retrofit interventions on indoor climate parameters using **linear mixed effects (LME) models**. The code and sample data accompany the paper:
 
-> **[AKM]**, "Assessing the Impact of Energy Retrofits on Indoor Climate Conditions Using Mixed Effects Models: Methodology and R Implementation," *[Atmosphere]*, [Year]. DOI: [insert DOI]
+> **[AKM]**, "Assessing the Impact of Energy Retrofits on Indoor Climate Conditions Using Mixed Effects Models: Methodology and R Implementation," *[Atmosphere]*, [Year]. DOI:
 
 The primary contribution is the analytical framework and its open-source implementation — not the findings of the specific case study. Indoor vapour pressure (partial pressure of water vapour, Pw) measured in 23 Irish residential homes across pre- and post-retrofit periods is used as a worked example, but the code is designed to be readily adapted to other indoor climate outcomes, building datasets, and retrofit contexts.
 

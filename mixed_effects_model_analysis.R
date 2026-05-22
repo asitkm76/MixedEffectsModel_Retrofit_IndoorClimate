@@ -11,7 +11,7 @@
 ######################################################################
 
 # ============================================================================
-# 1. SETUP AND LOAD DATA
+# 1. SETUP AND LOAD DATA----
 # ============================================================================
 
 # Load required packages
@@ -27,6 +27,12 @@ library(viridis)        # Colorblind-friendly palettes
 library(patchwork)      # Combine ggplot2 plots
 library(knitr)          # Table formatting
 library(scales)         # Axis scaling
+library(naniar)         # MCAR test
+library(mice)           # missigness plot
+library(nlme)           # auto correlation and AR1 models 
+library(lmtest)         
+library(sandwich)        
+library(performance)    # check model convergence
 
 # Load sample data (preserves types) OR CSV (universal)
 sample_data <- readRDS("retrofit_sample_data.rds")
@@ -40,7 +46,7 @@ cat("Homes:", n_distinct(sample_data$HomeID), "out of 23\n")
 str(sample_data[, c("DateTime", "RoomType", "HomeID", "RetrofitStatus")])
 
 # ============================================================================
-# 2. DESCRIPTIVE STATISTICS (Table 1 - name comes form epidemiology)
+# 2. DESCRIPTIVE STATISTICS (Table 1 - name comes form epidemiology)----
 # Stratified by RetrofitStatus for baseline comparison
 # ============================================================================
 
@@ -73,8 +79,48 @@ flextable(table1_df) %>%
 
 cat("\n✅ Table 1 exported (HTML + Word)\n")
 
+
 # ============================================================================
-# 3. EXPLORATORY ANALYSIS: Dew Point Temperature (DPT) Distribution
+# 3. Data missigness analysis----
+# Little's MCAR test and proportion of missing data by variables.
+# ============================================================================
+
+# Proportion missing by variable
+miss_summary <- sample_data %>%
+  summarise(across(everything(), ~ mean(is.na(.)) * 100)) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Pct_Missing") %>%
+  arrange(desc(Pct_Missing))
+
+print(miss_summary)
+
+# Visualize missingness pattern
+vis_miss(sample_data)
+
+# Little's MCAR test
+# Requires the 'mcar_test' function from naniar (wraps BaylorEdPsych or misty)
+mcar_vars <- sample_data %>%
+  select(RoomT, RoomRH,        # indoor — keep base measurements
+         ExternalT, ExternalRH, # outdoor — keep base measurements
+         Occupants) %>%          # add any other independent numerics
+  # drop rows that are ALL missing (mcar_test can't handle those)
+  filter(rowSums(is.na(.)) < ncol(.))
+
+mcar_test(mcar_vars)
+
+# p > 0.05 → cannot reject MCAR (supports MAR/MCAR assumption)
+# p < 0.05 → data are not MCAR; MAR is still plausible if missingness
+#             can be explained by observed covariates
+
+# Check if missingness in outcome is predicted by observed covariates
+sample_data <- sample_data %>%
+  mutate(missing_Pw = as.integer(is.na(RoomPw)))
+
+miss_model <- glm(missing_Pw ~ RetrofitStatus + Season + HomeID,
+                  data = sample_data, family = binomial)
+summary(miss_model)
+
+# ============================================================================
+# 4. EXPLORATORY ANALYSIS: Dew Point Temperature (DPT) Distribution----
 # Stacked bar plots showing pre/post retrofit shifts by home
 # ============================================================================
 
@@ -143,7 +189,7 @@ ggsave("DPT_exploration.png", dpt_plot, width = 12, height = 10, dpi = 300)
 cat("\n✅ Exploratory DPT plots exported\n")
 
 # ============================================================================
-# 4. MIXED EFFECTS MODEL BUILDING & SELECTION
+# 5. MIXED EFFECTS MODEL BUILDING & SELECTION----
 # Progressive model simplification via theory + statistics
 # ============================================================================
 
@@ -175,7 +221,7 @@ lmmHomePWRoom_model2 <- lmer(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT +
 
 
 # ============================================================================
-# 5. MODEL COMPARISON & SELECTION
+# 6. MODEL COMPARISON & SELECTION----
 # Likelihood ratio tests + AIC → Model 1 optimal
 # ============================================================================
 
@@ -190,7 +236,61 @@ final_model <- lmmHomePWRoom_model1
 cat("\n✅ FINAL MODEL SELECTED: lmmHomePWRoom_model1 (AIC = -44,426\n")
 
 # ============================================================================
-# 6. FINAL MODEL RESULTS & DIAGNOSTICS
+## 6.1 Systematic random slope selection with LRT table----
+# Likelihood ratio tests + AIC - random slopes for retrofit status and Pw
+# ============================================================================
+
+# Baseline: random intercept only
+m0 <- lmer(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + 
+             RoomT + RoomType + Season + Occupants + 
+             (1 | HomeID),
+           data = sample_data, REML = FALSE)
+
+# Add random slope for RetrofitStatus
+m1 <- lmer(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + 
+             RoomT + RoomType + Season + Occupants + 
+             (1 + RetrofitStatus | HomeID),
+           data = sample_data, REML = FALSE)
+
+# Add random slope for ExternalPw
+m2 <- lmer(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + 
+             RoomT + RoomType + Season + Occupants + 
+             (1 + RetrofitStatus + ExternalPw | HomeID),
+           data = sample_data, REML = FALSE)
+
+# models m3 and m4 do not make as much physical sense
+# after accounting for outdoor humidity, homes may not behave
+# differently for season and outdoor temperature.
+
+# Test random slope for RoomT
+m3 <- lmer(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + 
+             RoomT + RoomType + Season + Occupants + 
+             (1 + RetrofitStatus + ExternalPw + RoomT | HomeID),
+           data = sample_data, REML = FALSE)
+
+# Test random slope for Season
+m4 <- lmer(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + 
+             RoomT + RoomType + Season + Occupants + 
+             (1 + RetrofitStatus + ExternalPw + Season | HomeID),
+           data = sample_data, REML = FALSE)
+
+# LRT comparisons
+lrt_table <- anova(m0, m1, m2)
+print(lrt_table)
+
+lrt_table1 <- anova(m0, m1, m2, m3, m4)
+print(lrt_table1)
+
+# Check convergence
+library(performance)
+check_convergence(m0)
+check_convergence(m1)
+check_convergence(m2)
+check_convergence(m3)
+check_convergence(m4)
+
+# ============================================================================
+# 7. FINAL MODEL RESULTS & DIAGNOSTICS----
 # ============================================================================
 
 # Publication-ready table (standardized coefficients)
@@ -288,9 +388,42 @@ ggsave("model_stability_plot.png", stability_plot, width = 12,
 
 cat("\n✅ Model stability check plot exported\n")
 
+# ============================================================================
+# 8. Autocorrelation----
+# In the model residuals
+# ============================================================================
+
+# Check ACF of residuals from lme4 model
+residuals_ts <- residuals(final_model)
+acf(residuals_ts, main = "ACF of Model Residuals")
+pacf(residuals_ts, main = "PACF of Model Residuals")
+
+# Durbin-Watson test 
+library(car)
+durbinWatsonTest(lm(RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + 
+                      RoomT + RoomType + Season + Occupants,
+                    data = sample_data))
+
+# If autocorrelation is detected, refit with AR1 using nlme::lme()
+library(nlme)
+model_ar1 <- lme(
+  RoomPw ~ RetrofitStatus + ExternalPw + ExternalT + RoomT + 
+    RoomType + Season + Occupants,
+  random = ~ 1 + RetrofitStatus + ExternalPw | HomeID,
+  correlation = corAR1(form = ~ 1 | HomeID),  # AR(1) within homes
+  data = sample_data,
+  method = "REML"
+)
+
+summary(model_ar1)
+
+# Compare lme4 vs AR1 model — note: cannot be directly nested via LRT
+# Use AIC for informal comparison
+AIC(final_model)
+AIC(model_ar1)
 
 # ============================================================================
-# 7. ROBUSTNESS TO EXTREME VALUES
+# 9. ROBUSTNESS TO EXTREME VALUES----
 # Exclude 95th/99th percentile observations → verify retrofit effect stability
 # ============================================================================
 # Define predictors for outlier removal
@@ -352,7 +485,7 @@ kable(coef_comparison,
 
 
 # ============================================================================
-# 8. RANDOM EFFECTS ANALYSIS
+# 10. RANDOM EFFECTS ANALYSIS----
 # Home-level heterogeneity visualization
 # ============================================================================
 
@@ -395,7 +528,7 @@ ggplot(ranef_data, aes(x = Intercept, y = ExternalPw_slope)) +
 ggsave("random_effects.png", width = 12, height = 6, dpi = 300)
 
 # ============================================================================
-# 9. POST-HOC PAIRWISE COMPARISONS
+# 11. POST-HOC PAIRWISE COMPARISONS----
 # RoomType × RetrofitStatus interactions
 # ============================================================================
 
@@ -427,8 +560,8 @@ lsm_pw <- emmeans(final_model, pairwise ~ RoomType * RetrofitStatus)
 summary(lsm_pw)
 
 # ============================================================================
-# 10. MODEL VALIDATION: Train/Test Split
-# External validation confirms generalizability
+# 12. MODEL VALIDATION: Train/Test Split----
+# holdout temporal validation
 # ============================================================================
 
 library(caret)
